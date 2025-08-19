@@ -14,28 +14,58 @@ A modular Python command-line tool for interacting with the F5 iHealth API. BigH
 
 ## 📋 Prerequisites
 
+### Automated Installation
+If using the automated installer script, no prerequisites needed! The script handles everything automatically.
+
+### Manual Installation
 - Python 3.7+
 - F5 iHealth account with API access
 - `requests` library
 
 ## 🚀 Quick Start
 
-### 1. Clone and Setup
+### Automated Installation (Recommended)
+
+The easiest way to install BigHealth is using our cross-platform installer script:
 
 ```bash
-git clone https://github.com/yourusername/bighealth.git
+# One-command installation for Linux and macOS
+curl -sSL https://raw.githubusercontent.com/Jerry-Lees/bighealth/main/install.sh | bash
+```
+
+**Supported Systems:**
+- **Linux**: Ubuntu/Debian, Fedora/RHEL/CentOS, openSUSE, Arch Linux
+- **macOS**: All versions (with automatic Homebrew setup)
+
+The installer will:
+- ✅ Detect your operating system and package manager
+- ✅ Install Python 3 and all required dependencies
+- ✅ Download BigHealth from GitHub
+- ✅ Set up an isolated Python virtual environment
+- ✅ Guide you through F5 iHealth API credential setup
+- ✅ Create helper scripts for easy daily use
+- ✅ Test the installation to ensure everything works
+
+### Manual Installation
+
+If you prefer to install manually:
+
+#### 1. Clone and Setup
+
+```bash
+git clone https://github.com/Jerry-Lees/bighealth.git
 cd bighealth
 pip install -r requirements.txt
 ```
 
-### 2. Get F5 iHealth API Credentials
+#### 2. Get F5 iHealth API Credentials
 
 1. Log in to [F5 iHealth](https://ihealth2.f5.com)
 2. Navigate to **Settings**
 3. Click **Generate Client ID and Client Secret**
 4. Copy both values
 
-### 3. Configure Credentials
+#### 3. Configure Credentials
 
 ```bash
 echo "your_client_id" > credentials/cid
@@ -43,7 +73,7 @@ echo "your_client_secret" > credentials/cs
 chmod 600 credentials/cid credentials/cs
 ```
 
-### 4. Test Your Setup
+#### 4. Test Your Setup
 
 ```bash
 # List available QKViews
@@ -303,6 +333,13 @@ export F5_IHEALTH_CLIENT_SECRET="your_client_secret"
 ### Daily Operations
 
 ```bash
+# Activate BigHealth environment (if manually installed)
+cd ~/bighealth
+source bighealth_env/bin/activate
+
+# OR use helper scripts (available after automated installation)
+./scripts/run.sh list
+
 # Quick check of available QKViews
 python bighealth.py list
 
@@ -343,6 +380,16 @@ python bighealth.py -vvv get diagnostics --id 24821984
 
 ### Common Issues
 
+**Installation Problems**
+```bash
+# Re-run the automated installer
+curl -sSL https://raw.githubusercontent.com/Jerry-Lees/bighealth/main/install.sh | bash
+
+# Or check system requirements manually
+python3 --version  # Should be 3.7+
+pip3 --version     # Should be available
+```
+
 **Authentication Failed (401)**
 ```bash
 # Check your credentials
@@ -350,6 +397,9 @@ cat credentials/cid
 cat credentials/cs
 
 # Regenerate credentials in F5 iHealth web interface
+# Or use the helper script (if installed via automated installer)
+./scripts/setup_credentials.sh
+
 # Ensure files have correct permissions
 chmod 600 credentials/cid credentials/cs
 ```
@@ -378,9 +428,23 @@ ls -la QKViews/
 
 **Module Import Errors**
 ```bash
-# Ensure you're in the correct directory
+# If using manual installation, ensure you're in the correct directory
 ls -la modules/
 python -c "import sys; print(sys.path)"
+
+# If using automated installation, activate the environment
+source bighealth_env/bin/activate
+# OR use helper scripts
+./scripts/activate.sh
+```
+
+**Virtual Environment Issues (Manual Installation)**
+```bash
+# Recreate virtual environment
+rm -rf bighealth_env
+python3 -m venv bighealth_env
+source bighealth_env/bin/activate
+pip install -r requirements.txt
 ```
 
 ### Debug Commands
@@ -394,6 +458,12 @@ python bighealth.py -v process --id 24821984
 
 # Verify directory structure
 python bighealth.py local
+
+# Test credentials (automated installation)
+./scripts/setup_credentials.sh
+
+# Activate environment manually (automated installation)
+source bighealth_env/bin/activate
 ```
 
 ## 📚 API Reference
@@ -454,11 +524,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/Jerry-Lees/bighealth/issues)
+- **Issues**: [GitHub Issues](https://github.com/yourusername/bighealth/issues)
 - **Documentation**: This README and inline code documentation
 - **F5 iHealth**: [F5 Support Portal](https://support.f5.com)
 
 ---
 
 **Note**: This tool is not officially supported by F5 Networks. It's a community-developed tool for automating F5 iHealth API interactions.
-
