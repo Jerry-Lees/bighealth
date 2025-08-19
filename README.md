@@ -454,7 +454,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/bighealth/issues)
+- **Issues**: [GitHub Issues](https://github.com/Jerry-Lees/bighealth/issues)
 - **Documentation**: This README and inline code documentation
 - **F5 iHealth**: [F5 Support Portal](https://support.f5.com)
 
