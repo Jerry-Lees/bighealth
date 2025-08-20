@@ -14,9 +14,10 @@ from qkview_directory_utils import initialize_qkview_processing, save_data_to_qk
 class F5iHealthClient:
     """Base F5 iHealth API client"""
     
-    def __init__(self, auth_handler):
+    def __init__(self, auth_handler, debug=False):
         self.auth = auth_handler
         self.base_url = "https://ihealth2-api.f5.com/qkview-analyzer/api"
+        self.debug = debug
         
     def _make_request(self, method, endpoint, **kwargs):
         """Make an authenticated API request"""
@@ -38,15 +39,17 @@ class F5iHealthClient:
             
             # Check if response has content
             if not response.content:
-                print(f"Empty response from {url}")
+                if self.debug:
+                    print(f"DEBUG: Empty response from {url}")
                 return None
             
             # Check content type
             content_type = response.headers.get('content-type', '')
             if 'application/json' not in content_type:
-                print(f"Non-JSON response from {url}")
-                print(f"Content-Type: {content_type}")
-                print(f"Response text: {response.text[:200]}...")
+                if self.debug:
+                    print(f"DEBUG: Non-JSON response from {url}")
+                    print(f"DEBUG: Content-Type: {content_type}")
+                    print(f"DEBUG: Response text: {response.text[:200]}...")
                 return None
             
             return response.json()
@@ -54,23 +57,25 @@ class F5iHealthClient:
             print(f"API request failed: {e}")
             if hasattr(e, 'response') and e.response is not None:
                 print(f"Status code: {e.response.status_code}")
-                print(f"Response headers: {dict(e.response.headers)}")
+                if self.debug:
+                    print(f"DEBUG: Response headers: {dict(e.response.headers)}")
                 try:
                     error_details = e.response.json()
-                    print(f"Error details: {json.dumps(error_details, indent=2)}")
+                    if self.debug:
+                        print(f"DEBUG: Error details: {json.dumps(error_details, indent=2)}")
                 except:
                     print(f"Response text: {e.response.text}")
             return None
         except json.JSONDecodeError as e:
             print(f"Failed to parse JSON response: {e}")
-            print(f"Response status: {response.status_code}")
-            print(f"Response headers: {dict(response.headers)}")
-            print(f"Response text: {response.text[:500]}...")
+            if self.debug:
+                print(f"DEBUG: Response status: {response.status_code}")
+                print(f"DEBUG: Response headers: {dict(response.headers)}")
+                print(f"DEBUG: Response text: {response.text[:500]}...")
             return None
     
     def list_qkviews(self):
         """Get a list of all QKViews"""
-        print("DEBUG: Calling /qkviews endpoint...")
         return self._make_request("GET", "/qkviews")
     
     def get_qkview_details(self, qkview_id):

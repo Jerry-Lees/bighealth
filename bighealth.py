@@ -7,6 +7,32 @@ Main script for interacting with F5 iHealth API.
 
 import sys
 import os
+
+# Check if we're in a virtual environment and have required dependencies
+def check_environment():
+    """Check if we're properly set up to run"""
+    try:
+        import requests
+    except ImportError:
+        print("❌ Error: Required dependencies not found!")
+        print()
+        print("It looks like you're not in the BigHealth virtual environment.")
+        print("This usually happens when running the script directly after installation.")
+        print()
+        print("🔧 Solution:")
+        print("   cd ~/bighealth")
+        print("   source bighealth_env/bin/activate")
+        print("   python bighealth.py list")
+        print()
+        print("💡 OR use the helper script:")
+        print("   ./scripts/run.sh list")
+        print()
+        print("📖 For more help, see: https://github.com/Jerry-Lees/bighealth")
+        sys.exit(1)
+
+# Check environment before importing our modules
+check_environment()
+
 import argparse
 import json
 
@@ -18,7 +44,7 @@ from ihealth_utils import F5iHealthClient, print_qkview_summary
 from qkview_directory_utils import list_qkview_directories, initialize_qkview_processing
 
 
-def get_authenticated_client(verbose=False):
+def get_authenticated_client(verbose=False, debug=False):
     """Get authenticated client - common function for all commands"""
     # Get credentials
     client_id, client_secret = load_credentials_from_files(
@@ -27,7 +53,7 @@ def get_authenticated_client(verbose=False):
     )
     
     if not client_id or not client_secret:
-        if verbose:
+        if verbose or debug:
             print("Credential files not found, prompting for input...")
         client_id, client_secret = get_credentials_interactive()
     
@@ -42,7 +68,7 @@ def get_authenticated_client(verbose=False):
         print("   echo 'your_client_secret' > credentials/cs")
         sys.exit(1)
     
-    if verbose:
+    if verbose or debug:
         print(f"Using Client ID: {client_id[:8]}...")
     
     # Authenticate
@@ -53,12 +79,12 @@ def get_authenticated_client(verbose=False):
         print("✗ Authentication failed")
         sys.exit(1)
     
-    return F5iHealthClient(auth), auth
+    return F5iHealthClient(auth, debug=debug), auth
 
 
 def list_qkviews_command(args):
     """Handle the list QKViews command - just shows what's available"""
-    client, auth = get_authenticated_client(args.verbose)
+    client, auth = get_authenticated_client(args.verbose, args.debug)
     
     # Get QKViews
     print("Retrieving QKViews...")
@@ -72,15 +98,15 @@ def list_qkviews_command(args):
     if args.json_only:
         print(json.dumps(qkview_data, indent=2))
     else:
-        print_qkview_summary(qkview_data, show_raw=args.verbose)
+        print_qkview_summary(qkview_data, show_raw=args.verbose or args.debug)
         
-        if args.verbose:
+        if args.verbose or args.debug:
             print(f"\n✓ Token expires at: {auth.token_expires_at}")
 
 
 def process_qkviews_command(args):
     """Handle processing QKViews - creates directories and processes data"""
-    client, auth = get_authenticated_client(args.verbose)
+    client, auth = get_authenticated_client(args.verbose, args.debug)
     
     if args.id:
         # Process specific QKView ID
@@ -104,7 +130,7 @@ def process_qkviews_command(args):
             except Exception as e:
                 print(f"⚠ Diagnostics processing failed: {e}")
             
-            if args.verbose:
+            if args.verbose or args.debug:
                 print(json.dumps(qkview_details, indent=2))
         else:
             print(f"✗ Failed to process QKView {args.id}")
@@ -118,7 +144,7 @@ def process_qkviews_command(args):
             print("✗ Failed to retrieve QKViews")
             sys.exit(1)
         
-        if args.verbose:
+        if args.debug:
             print(f"DEBUG: QKView data type: {type(qkview_data)}")
             print(f"DEBUG: QKView data: {qkview_data}")
         
@@ -126,19 +152,20 @@ def process_qkviews_command(args):
         qkview_ids = []
         if isinstance(qkview_data, dict) and 'id' in qkview_data:
             qkview_ids = qkview_data['id']
-            if args.verbose:
+            if args.debug:
                 print(f"DEBUG: Found QKView IDs in 'id' field: {qkview_ids}")
         elif isinstance(qkview_data, list):
             qkview_ids = qkview_data
-            if args.verbose:
+            if args.debug:
                 print(f"DEBUG: QKView data is a list: {qkview_ids}")
         else:
-            if args.verbose:
+            if args.debug:
                 print(f"DEBUG: Unexpected QKView data structure")
         
         if not qkview_ids:
             print("No QKViews found to process")
-            print(f"DEBUG: qkview_data was: {qkview_data}")
+            if args.debug:
+                print(f"DEBUG: qkview_data was: {qkview_data}")
             return
         
         print(f"\nProcessing {len(qkview_ids)} QKView(s)...")
@@ -177,13 +204,13 @@ def process_qkviews_command(args):
         
         print(f"\n✓ Completed processing {len(qkview_ids)} QKView(s)")
         
-        if args.verbose:
+        if args.verbose or args.debug:
             print(f"✓ Token expires at: {auth.token_expires_at}")
 
 
 def get_diagnostics_command(args):
     """Handle getting diagnostics for QKViews"""
-    client, auth = get_authenticated_client(args.verbose)
+    client, auth = get_authenticated_client(args.verbose, args.debug)
     
     # Import diagnostics module
     from ihealth_diagnostics import F5iHealthDiagnostics
@@ -198,7 +225,7 @@ def get_diagnostics_command(args):
         
         if any(files.values()):
             print(f"✓ Successfully downloaded diagnostics for QKView {args.id}")
-            if args.verbose:
+            if args.verbose or args.debug:
                 print("Downloaded files:")
                 for file_type, filename in files.items():
                     if filename:
@@ -247,7 +274,7 @@ def get_diagnostics_command(args):
         
         print(f"\n✓ Completed diagnostics download: {success_count}/{len(qkview_ids)} successful")
         
-        if args.verbose:
+        if args.verbose or args.debug:
             print(f"✓ Token expires at: {auth.token_expires_at}")
 
 
@@ -305,6 +332,8 @@ Examples:
     # Global options
     parser.add_argument('-v', '--verbose', action='store_true',
                        help='Enable verbose output')
+    parser.add_argument('-vvv', '--debug', action='store_true',
+                       help='Enable debug output (very verbose)')
     parser.add_argument('--version', action='version', version='BigHealth 0.1.0')
     
     # Subcommands
