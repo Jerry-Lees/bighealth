@@ -10,7 +10,7 @@ import os
 import time
 from datetime import datetime
 from ihealth_utils import F5iHealthClient
-from qkview_directory_utils import update_qkview_metadata
+from qkview_directory_utils import update_qkview_metadata, find_qkview_directory
 
 
 class F5iHealthQKViewDownload(F5iHealthClient):
@@ -165,23 +165,59 @@ class F5iHealthQKViewDownload(F5iHealthClient):
         # Fallback to QKView ID if no hostname found
         return f"qkview_{qkview_data.get('id', 'unknown')}"
     
-    def _get_creation_date_from_metadata(self, qkview_id, base_path="QKViews"):
+    def _get_generation_date_from_metadata(self, qkview_id, base_path="QKViews"):
         """
-        Get creation date from existing metadata.json file
+        Get generation date from existing metadata.json file (from api_data.generation_date)
         
         Args:
             qkview_id (str): QKView ID
             base_path (str): Base directory path
             
         Returns:
-            str: Formatted date string or empty string if not found
+            str: Formatted date string (MM-DD-YYYY_HH:MM:SS) or empty string if not found
         """
         import json
         
-        metadata_file = os.path.join(base_path, str(qkview_id), "metadata.json")
+        # Use the new directory finder to locate the correct directory
+        qkview_dir, is_hostname_based = find_qkview_directory(qkview_id, base_path)
+        
+        if not qkview_dir:
+            return ""
+        
+        metadata_file = os.path.join(qkview_dir, "metadata.json")
         
         if not os.path.exists(metadata_file):
             return ""
+        
+        try:
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+            
+            # Look for generation_date in api_data (Unix timestamp in milliseconds)
+            if 'api_data' in metadata and isinstance(metadata['api_data'], dict):
+                api_data = metadata['api_data']
+                
+                if 'generation_date' in api_data and api_data['generation_date']:
+                    try:
+                        # Convert from milliseconds to seconds
+                        timestamp_ms = int(api_data['generation_date'])
+                        timestamp_s = timestamp_ms / 1000.0
+                        dt = datetime.fromtimestamp(timestamp_s)
+                        # Format as MM-DD-YYYY_HH:MM:SS
+                        return dt.strftime("%m-%d-%Y_%H:%M:%S")
+                    except (ValueError, TypeError, OSError) as e:
+                        if hasattr(self, 'debug') and self.debug:
+                            print(f"  DEBUG: Error parsing generation_date {api_data['generation_date']}: {e}")
+                        return ""
+            
+            # Fallback to other date fields if generation_date not available
+            return self._extract_creation_date_from_qkview_data(metadata.get('api_data', {}))
+                
+        except Exception as e:
+            if hasattr(self, 'debug') and self.debug:
+                print(f"  DEBUG: Error reading metadata for generation date: {e}")
+        
+        return ""
     
     def _extract_creation_date_from_qkview_data(self, qkview_data):
         """
@@ -196,7 +232,17 @@ class F5iHealthQKViewDownload(F5iHealthClient):
         if not qkview_data or not isinstance(qkview_data, dict):
             return ""
         
-        # Look for date fields in order of preference
+        # Look for generation_date first (Unix timestamp in milliseconds)
+        if 'generation_date' in qkview_data and qkview_data['generation_date']:
+            try:
+                timestamp_ms = int(qkview_data['generation_date'])
+                timestamp_s = timestamp_ms / 1000.0
+                dt = datetime.fromtimestamp(timestamp_s)
+                return dt.strftime("%m-%d-%Y_%H:%M:%S")
+            except (ValueError, TypeError, OSError):
+                pass
+        
+        # Look for other date fields in order of preference
         date_fields = [
             'created_date',
             'creation_date', 
@@ -244,45 +290,10 @@ class F5iHealthQKViewDownload(F5iHealthClient):
                     pass
         
         return ""  # Return empty string if no valid date found
-        
-        try:
-            with open(metadata_file, 'r') as f:
-                metadata = json.load(f)
-            
-            # Look for created_timestamp in metadata
-            if 'created_timestamp' in metadata:
-                timestamp_str = metadata['created_timestamp']
-                
-                # Try to parse the timestamp
-                date_formats = [
-                    "%Y-%m-%dT%H:%M:%S.%fZ",      # ISO format with microseconds
-                    "%Y-%m-%dT%H:%M:%SZ",         # ISO format without microseconds
-                    "%Y-%m-%dT%H:%M:%S.%f",       # ISO format with microseconds, no Z
-                    "%Y-%m-%dT%H:%M:%S",          # ISO format without Z
-                    "%Y-%m-%d %H:%M:%S",          # Space-separated format
-                ]
-                
-                for fmt in date_formats:
-                    try:
-                        dt = datetime.strptime(timestamp_str, fmt)
-                        # Format as MM-DD-YYYY_HH:MM:SS
-                        return dt.strftime("%m-%d-%Y_%H:%M:%S")
-                    except ValueError:
-                        continue
-            
-            # Fallback to api_data creation date if available
-            if 'api_data' in metadata and isinstance(metadata['api_data'], dict):
-                return self._extract_creation_date_from_qkview_data(metadata['api_data'])
-                
-        except Exception as e:
-            if hasattr(self, 'debug') and self.debug:
-                print(f"  DEBUG: Error reading metadata for date: {e}")
-        
-        return ""
     
     def _generate_qkview_filename(self, qkview_data, qkview_id, base_path="QKViews"):
         """
-        Generate appropriate filename for QKView based on hostname and date from metadata
+        Generate appropriate filename for QKView based on hostname and generation date from metadata
         
         Args:
             qkview_data (dict): QKView details from API
@@ -294,8 +305,8 @@ class F5iHealthQKViewDownload(F5iHealthClient):
         """
         hostname = self._extract_hostname_from_qkview_data(qkview_data)
         
-        # Try to get date from metadata first (preferred)
-        date_str = self._get_creation_date_from_metadata(qkview_id, base_path)
+        # Get generation date from metadata first (preferred)
+        date_str = self._get_generation_date_from_metadata(qkview_id, base_path)
         
         # Fallback to extracting from qkview_data if metadata doesn't have it
         if not date_str:
@@ -322,7 +333,13 @@ class F5iHealthQKViewDownload(F5iHealthClient):
         """
         import json
         
-        metadata_file = os.path.join(base_path, str(qkview_id), "metadata.json")
+        # Use the new directory finder to locate the correct directory
+        qkview_dir, is_hostname_based = find_qkview_directory(qkview_id, base_path)
+        
+        if not qkview_dir:
+            return None
+        
+        metadata_file = os.path.join(qkview_dir, "metadata.json")
         
         if not os.path.exists(metadata_file):
             return None
@@ -417,32 +434,10 @@ class F5iHealthQKViewDownload(F5iHealthClient):
         # File exists and is adequate size
         size_mb = file_size / (1024 * 1024)
         return False, f"File exists and appears to be adequate size ({size_mb:.1f}MB)"
-        """
-        Check if QKView file should be downloaded based on existence and size
-        
-        Args:
-            file_path (str): Path to the QKView file
-            
-        Returns:
-            tuple: (should_download: bool, reason: str)
-        """
-        if not os.path.exists(file_path):
-            return True, "File does not exist"
-        
-        # Check file size (10MB = 10 * 1024 * 1024 bytes)
-        file_size = os.path.getsize(file_path)
-        min_size_bytes = 10 * 1024 * 1024  # 10MB
-        
-        if file_size < min_size_bytes:
-            size_mb = file_size / (1024 * 1024)
-            return True, f"File exists but is too small ({size_mb:.1f}MB < 10MB)"
-        
-        # File exists and is >= 10MB
-        size_mb = file_size / (1024 * 1024)
-        return False, f"File exists and is adequate size ({size_mb:.1f}MB)"
+
     def download_qkview_file(self, qkview_id, qkview_data, base_path="QKViews"):
         """
-        Download QKView file and save it with proper naming
+        Download QKView file and save it with proper naming to hostname-based directory
         
         Args:
             qkview_id (str): QKView ID
@@ -452,11 +447,17 @@ class F5iHealthQKViewDownload(F5iHealthClient):
         Returns:
             dict: Download result with filename and status
         """
-        # Generate filename using metadata timestamp
+        # Find the correct directory (hostname-based if available)
+        qkview_dir, is_hostname_based = find_qkview_directory(qkview_id, base_path)
+        
+        if not qkview_dir:
+            print(f"  ✗ Could not find directory for QKView {qkview_id}")
+            return {'success': False, 'error': 'Directory not found'}
+        
+        # Generate filename using generation date from metadata
         filename = self._generate_qkview_filename(qkview_data, qkview_id, base_path)
         
         # Check if file already exists and determine if we should download
-        qkview_dir = os.path.join(base_path, str(qkview_id))
         file_path = os.path.join(qkview_dir, filename)
         
         should_download, reason = self._should_download_qkview(file_path, qkview_id, base_path)
@@ -478,7 +479,7 @@ class F5iHealthQKViewDownload(F5iHealthClient):
         if not file_content:
             return {'success': False, 'error': 'Failed to download QKView file'}
         
-        # Create directory if it doesn't exist
+        # Create directory if it doesn't exist (shouldn't be needed, but safety check)
         os.makedirs(qkview_dir, exist_ok=True)
         
         # Save the file
@@ -494,19 +495,19 @@ class F5iHealthQKViewDownload(F5iHealthClient):
             size_valid, size_message = self._validate_file_size(file_path, expected_size)
             
             if size_valid:
-                print(f"  ✅ Successfully saved QKView file: {filename} ({file_size_mb:.1f}MB)")
+                print(f"  ✓ Successfully saved QKView file: {filename} ({file_size_mb:.1f}MB)")
                 if expected_size and self.debug:
                     print(f"  DEBUG: {size_message}")
             else:
-                print(f"  ✅ QKView file saved: {filename} ({file_size_mb:.1f}MB)")
-                print(f"  ⚠️  WARNING: {size_message}")
+                print(f"  ✓ QKView file saved: {filename} ({file_size_mb:.1f}MB)")
+                print(f"  ▲ WARNING: {size_message}")
                 print(f"  This could indicate a download issue or metadata inconsistency")
             
             # Update metadata
             hostname = self._extract_hostname_from_qkview_data(qkview_data)
-            creation_date = self._get_creation_date_from_metadata(qkview_id, base_path)
-            if not creation_date:
-                creation_date = self._extract_creation_date_from_qkview_data(qkview_data)
+            generation_date = self._get_generation_date_from_metadata(qkview_id, base_path)
+            if not generation_date:
+                generation_date = self._extract_creation_date_from_qkview_data(qkview_data)
             
             # Include size validation info in metadata
             metadata_update = {
@@ -516,7 +517,7 @@ class F5iHealthQKViewDownload(F5iHealthClient):
                     'file_size': file_size,
                     'downloaded_at': datetime.now().isoformat(),
                     'hostname': hostname,
-                    'creation_date': creation_date,
+                    'generation_date': generation_date,
                     'size_validation': {
                         'actual_size': file_size,
                         'expected_size': expected_size,
@@ -537,7 +538,7 @@ class F5iHealthQKViewDownload(F5iHealthClient):
                 'file_path': file_path,
                 'file_size': file_size,
                 'hostname': hostname,
-                'creation_date': creation_date,
+                'generation_date': generation_date,
                 'size_validation': {
                     'valid': size_valid,
                     'message': size_message,
@@ -546,7 +547,7 @@ class F5iHealthQKViewDownload(F5iHealthClient):
             }
             
         except Exception as e:
-            print(f"  Failed to save QKView file: {e}")
+            print(f"  ✗ Failed to save QKView file: {e}")
             return {'success': False, 'error': f'Failed to save file: {e}'}
     
     def check_qkview_file_exists(self, qkview_id, base_path="QKViews"):
@@ -560,9 +561,10 @@ class F5iHealthQKViewDownload(F5iHealthClient):
         Returns:
             dict: Information about existing file or None if not found
         """
-        qkview_dir = os.path.join(base_path, str(qkview_id))
+        # Find the correct directory (hostname-based if available)
+        qkview_dir, is_hostname_based = find_qkview_directory(qkview_id, base_path)
         
-        if not os.path.exists(qkview_dir):
+        if not qkview_dir or not os.path.exists(qkview_dir):
             return None
         
         # Look for .qkview files in the directory

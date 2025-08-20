@@ -10,7 +10,7 @@ import json
 import os
 import time
 from ihealth_utils import F5iHealthClient
-from qkview_directory_utils import save_data_to_qkview, update_qkview_metadata
+from qkview_directory_utils import save_data_to_qkview, update_qkview_metadata, find_qkview_directory
 
 
 class F5iHealthDiagnostics(F5iHealthClient):
@@ -212,6 +212,7 @@ class F5iHealthDiagnostics(F5iHealthClient):
     def download_diagnostic_reports(self, qkview_id, base_path="QKViews"):
         """
         Download diagnostic reports (PDF and CSV) for issues found on the device
+        Uses hostname-based directory structure
         
         Args:
             qkview_id (str): QKView ID
@@ -221,6 +222,17 @@ class F5iHealthDiagnostics(F5iHealthClient):
             dict: Summary of downloaded files
         """
         print(f"Downloading diagnostic reports for QKView {qkview_id}...")
+        
+        # Find the correct directory (hostname-based if available)
+        qkview_dir, is_hostname_based = find_qkview_directory(qkview_id, base_path)
+        
+        if not qkview_dir:
+            print(f"✗ Could not find directory for QKView {qkview_id}")
+            return {
+                'pdf': None,
+                'csv': None,
+                'json_hit': None
+            }
         
         # Get hostname for file naming
         hostname = self.get_hostname_from_qkview(qkview_id)
@@ -234,12 +246,15 @@ class F5iHealthDiagnostics(F5iHealthClient):
         # Download diagnostic reports (hit diagnostics only - actual issues found)
         print("Downloading diagnostic reports...")
         
+        # Create Diagnostics directory if it doesn't exist
+        diagnostics_dir = os.path.join(qkview_dir, "Diagnostics")
+        os.makedirs(diagnostics_dir, exist_ok=True)
+        
         # PDF (hit diagnostics - issues found)
         pdf_content = self._make_diagnostic_request(qkview_id, 'hit', 'pdf')
         if pdf_content:
             filename = f"{hostname}.pdf"
-            file_path = os.path.join(base_path, str(qkview_id), "Diagnostics", filename)
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            file_path = os.path.join(diagnostics_dir, filename)
             with open(file_path, 'wb') as f:
                 f.write(pdf_content)
             downloaded_files['pdf'] = filename
@@ -249,7 +264,7 @@ class F5iHealthDiagnostics(F5iHealthClient):
         csv_content = self._make_diagnostic_request(qkview_id, 'hit', 'csv')
         if csv_content:
             filename = f"{hostname}.csv"
-            file_path = os.path.join(base_path, str(qkview_id), "Diagnostics", filename)
+            file_path = os.path.join(diagnostics_dir, filename)
             with open(file_path, 'wb') as f:
                 f.write(csv_content)
             downloaded_files['csv'] = filename
