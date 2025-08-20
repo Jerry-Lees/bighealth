@@ -12,6 +12,12 @@ import time
 from ihealth_utils import F5iHealthClient
 from qkview_directory_utils import save_data_to_qkview, update_qkview_metadata, find_qkview_directory
 
+# ANSI color codes
+RED = '\033[0;31m'
+GREEN = '\033[0;32m'
+YELLOW = '\033[1;33m'
+NC = '\033[0m'  # No Color
+
 
 class F5iHealthDiagnostics(F5iHealthClient):
     """F5 iHealth Diagnostics operations"""
@@ -227,7 +233,7 @@ class F5iHealthDiagnostics(F5iHealthClient):
         qkview_dir, is_hostname_based = find_qkview_directory(qkview_id, base_path)
         
         if not qkview_dir:
-            print(f"✗ Could not find directory for QKView {qkview_id}")
+            print(f"{RED}✗{NC} Could not find directory for QKView {qkview_id}")
             return {
                 'pdf': None,
                 'csv': None,
@@ -258,7 +264,7 @@ class F5iHealthDiagnostics(F5iHealthClient):
             with open(file_path, 'wb') as f:
                 f.write(pdf_content)
             downloaded_files['pdf'] = filename
-            print(f"✓ Downloaded {filename}")
+            print(f"{GREEN}✓{NC} Downloaded {filename}")
         
         # CSV (hit diagnostics - issues found)
         csv_content = self._make_diagnostic_request(qkview_id, 'hit', 'csv')
@@ -268,7 +274,7 @@ class F5iHealthDiagnostics(F5iHealthClient):
             with open(file_path, 'wb') as f:
                 f.write(csv_content)
             downloaded_files['csv'] = filename
-            print(f"✓ Downloaded {filename}")
+            print(f"{GREEN}✓{NC} Downloaded {filename}")
         
         # Download JSON data for programmatic access
         print("Downloading JSON diagnostic data...")
@@ -279,14 +285,14 @@ class F5iHealthDiagnostics(F5iHealthClient):
             filename = "diagnostics_hit.json"
             save_data_to_qkview(qkview_id, "Diagnostics", filename, json_hit, base_path)
             downloaded_files['json_hit'] = filename
-            print(f"✓ Saved {filename}")
+            print(f"{GREEN}✓{NC} Saved {filename}")
         
         # Generate and save summary
         summary = self.get_diagnostic_summary(qkview_id)
         if summary:
             filename = "diagnostic_summary.json"
             save_data_to_qkview(qkview_id, "Diagnostics", filename, summary, base_path)
-            print(f"✓ Generated {filename}")
+            print(f"{GREEN}✓{NC} Generated {filename}")
         
         # Update metadata
         update_qkview_metadata(qkview_id, {
@@ -295,7 +301,7 @@ class F5iHealthDiagnostics(F5iHealthClient):
             'hostname': hostname
         }, base_path)
         
-        print(f"✓ Completed diagnostic downloads for {hostname}")
+        print(f"{GREEN}✓{NC} Completed diagnostic downloads for {hostname}")
         return downloaded_files
     
     def get_critical_issues(self, qkview_id):

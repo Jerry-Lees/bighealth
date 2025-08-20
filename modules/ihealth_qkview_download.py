@@ -12,6 +12,12 @@ from datetime import datetime
 from ihealth_utils import F5iHealthClient
 from qkview_directory_utils import update_qkview_metadata, find_qkview_directory
 
+# ANSI color codes
+RED = '\033[0;31m'
+GREEN = '\033[0;32m'
+YELLOW = '\033[1;33m'
+NC = '\033[0m'  # No Color
+
 
 class F5iHealthQKViewDownload(F5iHealthClient):
     """F5 iHealth QKView file download operations"""
@@ -451,7 +457,7 @@ class F5iHealthQKViewDownload(F5iHealthClient):
         qkview_dir, is_hostname_based = find_qkview_directory(qkview_id, base_path)
         
         if not qkview_dir:
-            print(f"  ✗ Could not find directory for QKView {qkview_id}")
+            print(f"  {RED}✗{NC} Could not find directory for QKView {qkview_id}")
             return {'success': False, 'error': 'Directory not found'}
         
         # Generate filename using generation date from metadata
@@ -495,12 +501,12 @@ class F5iHealthQKViewDownload(F5iHealthClient):
             size_valid, size_message = self._validate_file_size(file_path, expected_size)
             
             if size_valid:
-                print(f"  ✓ Successfully saved QKView file: {filename} ({file_size_mb:.1f}MB)")
+                print(f"  {GREEN}✓{NC} Successfully saved QKView file: {filename} ({file_size_mb:.1f}MB)")
                 if expected_size and self.debug:
                     print(f"  DEBUG: {size_message}")
             else:
-                print(f"  ✓ QKView file saved: {filename} ({file_size_mb:.1f}MB)")
-                print(f"  ▲ WARNING: {size_message}")
+                print(f"  {GREEN}✓{NC} QKView file saved: {filename} ({file_size_mb:.1f}MB)")
+                print(f"  {YELLOW}▲{NC} WARNING: {size_message}")
                 print(f"  This could indicate a download issue or metadata inconsistency")
             
             # Update metadata
@@ -547,7 +553,7 @@ class F5iHealthQKViewDownload(F5iHealthClient):
             }
             
         except Exception as e:
-            print(f"  ✗ Failed to save QKView file: {e}")
+            print(f"  {RED}✗{NC} Failed to save QKView file: {e}")
             return {'success': False, 'error': f'Failed to save file: {e}'}
     
     def check_qkview_file_exists(self, qkview_id, base_path="QKViews"):

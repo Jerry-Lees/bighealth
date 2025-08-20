@@ -11,6 +11,12 @@ import base64
 import os
 from datetime import datetime, timedelta
 
+# ANSI color codes
+RED = '\033[0;31m'
+GREEN = '\033[0;32m'
+YELLOW = '\033[1;33m'
+NC = '\033[0m'  # No Color
+
 
 class F5iHealthAuth:
     """F5 iHealth API Authentication handler using OAuth2 Client Credentials flow"""
@@ -134,7 +140,8 @@ if __name__ == "__main__":
     
     auth = F5iHealthAuth(client_id, client_secret)
     if auth.authenticate():
-        print("✓ Authentication successful!")
-        print(f"✓ Token expires at: {auth.token_expires_at}")
+        print(f"{GREEN}✓{NC} Authentication successful!")
+        print(f"{GREEN}✓{NC} Token expires at: {auth.token_expires_at}")
     else:
-        print("✗ Authentication failed!")
+        print(f"{RED}✗{NC} Authentication failed!")
+
