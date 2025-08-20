@@ -42,6 +42,8 @@ def create_qkview_directory_structure(qkview_id, base_path="QKViews"):
         "iRules",
         "System",
         "Configuration",
+        "Commands",
+        "Graphs", 
         "Logs",
         "Logs/search_results",
         "Docs"
