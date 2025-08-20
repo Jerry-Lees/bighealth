@@ -1,14 +1,16 @@
 # BigHealth - F5 iHealth API Tool
 
-A modular Python command-line tool for interacting with the F5 iHealth API. BigHealth allows you to automate the download and organization of diagnostic data, configuration files, logs, and other information from your F5 BIG-IP QKViews.
+A modular Python command-line tool for interacting with the F5 iHealth API. BigHealth allows you to automate the download and organization of diagnostic data, QKView files, configuration files, logs, and other information from your F5 BIG-IP QKViews.
 
 ## 🎯 Features
 
 - **OAuth2 Authentication** - Modern API authentication with automatic token refresh
 - **Modular Architecture** - Organized around F5 iHealth web interface menu structure
 - **Automatic Directory Organization** - Creates structured directories for each QKView
+- **Smart QKView File Downloads** - Downloads actual QKView files with intelligent naming and validation
 - **Comprehensive Diagnostics** - Downloads PDF, CSV, and JSON diagnostic reports for issues found
 - **Hostname-based File Naming** - Uses actual device hostnames for intuitive file organization
+- **File Size Validation** - Compares downloaded files against expected sizes from metadata
 - **Progress Tracking** - Visual feedback and metadata tracking for all operations
 - **Secure Credential Storage** - Git-ignored credential files for security
 
@@ -79,7 +81,7 @@ chmod 600 credentials/cid credentials/cs
 # List available QKViews
 python bighealth.py list
 
-# Process everything (creates directories + downloads diagnostics)
+# Process everything (creates directories + downloads QKView files + diagnostics)
 python bighealth.py process
 ```
 
@@ -90,7 +92,7 @@ python bighealth.py process
 | Command | Description | What It Does |
 |---------|-------------|--------------|
 | `list` | List available QKViews (read-only) | Shows QKViews in your iHealth account |
-| `process` | Full processing pipeline | Creates directories + downloads diagnostics for all QKViews |
+| `process` | Full processing pipeline | Creates directories + downloads QKView files + diagnostics for all QKViews |
 | `get diagnostics` | Download diagnostic reports only | Downloads PDF/CSV/JSON diagnostic reports |
 | `local` | Show local QKView directories | Lists locally processed QKViews and their status |
 
@@ -140,10 +142,10 @@ QKVIEW ID #4: 24821968
 
 #### `process` - Full Processing Pipeline
 
-Creates directory structures and downloads all available data for QKViews. This is the "do everything" command.
+Creates directory structures and downloads all available data for QKViews. This is the "do everything" command that includes smart QKView file downloads.
 
 ```bash
-# Process all QKViews
+# Process all QKViews (downloads QKView files + diagnostics)
 python bighealth.py process
 
 # Process specific QKView
@@ -161,9 +163,27 @@ python bighealth.py -vvv process --id 24821984
 
 **What It Creates:**
 - Directory structure for each QKView
+- **Downloads actual QKView files** with smart naming and validation
 - Downloads diagnostic reports (PDF, CSV, JSON)
 - Creates metadata and documentation files
 - Updates processing status
+
+**Smart QKView File Download Logic:**
+The process command intelligently downloads QKView files only when needed:
+- ✅ **Downloads if:** File doesn't exist
+- ✅ **Downloads if:** File exists but is smaller than 10MB (likely corrupted)
+- ✅ **Downloads if:** File size differs significantly from expected size in metadata
+- ⏭️ **Skips if:** File exists and appears to be adequate size
+
+**QKView File Naming:**
+Files are named using hostname and creation timestamp from metadata:
+- `hostname_MM-DD-YYYY_HH:MM:SS.qkview` (when timestamp available)
+- `hostname.qkview` (when no timestamp available)
+
+**Examples:**
+- `bigip-prod-01_08-19-2025_14:30:15.qkview`
+- `lab-f5-device_12-25-2024_09:45:30.qkview`
+- `HOMELAB-01.lees-family.io_03-15-2025_16:20:45.qkview`
 
 #### `get diagnostics` - Download Diagnostic Reports
 
@@ -207,11 +227,15 @@ Found 4 local QKView directories:
 ==================================================
 QKView ID: 24821984
   Created: 2025-08-19T13:45:12.123456
-  Status: {'diagnostics': True}
+  Status: {'diagnostics': True, 'qkview_downloaded': True}
+  QKView File: bigip-prod-01_08-19-2025_14:30:15.qkview
+  File Size: 47,394,816 bytes
+  Hostname: bigip-prod-01
 
 QKView ID: 24821980
   Created: 2025-08-19T13:46:15.789012
-  Status: {'diagnostics': True}
+  Status: {'diagnostics': True, 'qkview_downloaded': True}
+  QKView Files: HOMELAB-01.lees-family.io_08-19-2025_13:46:15.qkview
 ```
 
 ## 📁 Directory Structure
@@ -221,12 +245,13 @@ BigHealth automatically creates organized directories for each QKView:
 ```
 QKViews/
 ├── 24821984/                          # QKView ID
+│   ├── bigip-prod-01_08-19-2025_14:30:15.qkview  # QKView file with smart naming
 │   ├── metadata.json                  # Processing metadata and status
 │   ├── Diagnostics/
-│   │   ├── bigip-lab01.lees-family.io.pdf    # Issues found (PDF format)
-│   │   ├── bigip-lab01.lees-family.io.csv    # Issues found (CSV format)
-│   │   ├── diagnostics_hit.json             # Issues found (JSON for scripting)
-│   │   └── diagnostic_summary.json          # Issue summary by severity
+│   │   ├── bigip-prod-01.pdf          # Issues found (PDF format)
+│   │   ├── bigip-prod-01.csv          # Issues found (CSV format)
+│   │   ├── diagnostics_hit.json      # Issues found (JSON for scripting)
+│   │   └── diagnostic_summary.json    # Issue summary by severity
 │   ├── LTM/                           # Local Traffic Manager (future)
 │   ├── GTM/                           # Global Traffic Manager (future)
 │   ├── APM/                           # Access Policy Manager (future)
@@ -239,6 +264,7 @@ QKViews/
 │       ├── README.md                  # Directory documentation
 │       └── api_response.json          # Raw API response
 ├── 24821980/                          # Another QKView
+│   ├── HOMELAB-01.lees-family.io_08-19-2025_13:46:15.qkview
 │   └── ... (same structure)
 └── 24821972/                          # Another QKView
     └── ... (same structure)
@@ -264,7 +290,7 @@ export F5_IHEALTH_CLIENT_ID="your_client_id"
 export F5_IHEALTH_CLIENT_SECRET="your_client_secret"
 ```
 
-## 🏗️ Architecture
+## 🗂️ Architecture
 
 ### Core Modules
 
@@ -276,6 +302,7 @@ export F5_IHEALTH_CLIENT_SECRET="your_client_secret"
 ### Feature Modules
 
 - **`modules/ihealth_diagnostics.py`** - Diagnostic reports and health checks ✅ **Complete**
+- **`modules/ihealth_qkview_download.py`** - Smart QKView file downloads ✅ **Complete**
 - **`modules/ihealth_status.py`** - System/hardware status (planned)
 - **`modules/ihealth_config_explorer.py`** - Configuration analysis (planned)
 - **`modules/ihealth_commands.py`** - BIG-IP command outputs (planned)
@@ -291,6 +318,7 @@ export F5_IHEALTH_CLIENT_SECRET="your_client_secret"
 | **Authentication** | ✅ Complete | OAuth2 with automatic token refresh |
 | **QKView Listing** | ✅ Complete | List and enumerate QKViews |
 | **Directory Management** | ✅ Complete | Automated directory creation and organization |
+| **QKView Downloads** | ✅ Complete | Smart download with size validation and intelligent naming |
 | **Diagnostics** | ✅ Complete | PDF/CSV/JSON diagnostic reports for issues found |
 | **Status Tracking** | ✅ Complete | Metadata and processing status |
 | System Status | 🚧 Planned | Hardware/software status information |
@@ -301,7 +329,13 @@ export F5_IHEALTH_CLIENT_SECRET="your_client_secret"
 | iApps | 🚧 Planned | iApp template and service analysis |
 | Log Search | 🚧 Planned | Log file searching and analysis |
 
-## 🔍 File Types Created
+## 📄 File Types Created
+
+### QKView Files
+
+| File | Format | Contains |
+|------|--------|----------|
+| `hostname_MM-DD-YYYY_HH:MM:SS.qkview` | QKView | Actual sanitized QKView file from iHealth with smart naming |
 
 ### Diagnostic Files
 
@@ -316,9 +350,46 @@ export F5_IHEALTH_CLIENT_SECRET="your_client_secret"
 
 | File | Format | Contains |
 |------|--------|----------|
-| `metadata.json` | JSON | Processing timestamps, status, file inventory |
+| `metadata.json` | JSON | Processing timestamps, status, file inventory, QKView file info with size validation |
 | `README.md` | Markdown | Human-readable directory documentation |
 | `api_response.json` | JSON | Raw API response for debugging |
+
+## 🔍 QKView Download Features
+
+### Smart Download Logic
+BigHealth uses intelligent logic to avoid unnecessary downloads:
+
+**Downloads QKView files when:**
+- ✅ File doesn't exist
+- ✅ File exists but is smaller than 10MB (likely corrupted/incomplete)
+- ✅ File size differs significantly from expected size in metadata (±10% tolerance)
+
+**Skips download when:**
+- ⏭️ File exists and appears to be adequate size (≥10MB and matches expected size)
+
+### File Size Validation
+- **Compares** downloaded file size with expected size from metadata
+- **Warns** if there's a significant difference (±5% tolerance for warnings)
+- **Stores** validation results in metadata for future reference
+- **Provides** troubleshooting information for size mismatches
+
+**Example validation messages:**
+```bash
+# Good download
+✅ Successfully saved QKView file: bigip-prod-01_08-19-2025_14:30:15.qkview (45.2MB)
+
+# Size mismatch warning  
+⚠️ WARNING: File size mismatch: got 42.1MB, expected 45.2MB (difference: 6.9%)
+
+# File skipped
+QKView file skipped: HOMELAB-01.lees-family.io.qkview - File exists and appears to be adequate size (87.3MB)
+```
+
+### Intelligent Naming
+- **Uses creation timestamp** from metadata.json for consistent naming
+- **Extracts hostname** from multiple possible API fields
+- **Handles special characters** by replacing with underscores
+- **Removes file extensions** from hostnames (e.g., .qkview, .tgz)
 
 ## 🔒 Security
 
@@ -343,21 +414,27 @@ source bighealth_env/bin/activate
 # Quick check of available QKViews
 python bighealth.py list
 
-# Full processing of all QKViews (typical daily use)
+# Full processing of all QKViews (downloads QKView files + diagnostics)
 python bighealth.py process
 
-# Check what's been processed locally
+# Check what's been processed locally (shows QKView files and sizes)
 python bighealth.py local
 ```
 
 ### Troubleshooting Specific Device
 
 ```bash
-# Process specific problematic device
+# Process specific problematic device (downloads QKView file + diagnostics)
 python bighealth.py process --id 24821984
 
 # Get just diagnostics for quick analysis
 python bighealth.py get diagnostics --id 24821984
+
+# Review the actual QKView file
+ls -la QKViews/24821984/*.qkview
+
+# Check file size validation
+cat QKViews/24821984/metadata.json | grep -A 10 "size_validation"
 
 # Review diagnostic summary
 cat QKViews/24821984/Diagnostics/diagnostic_summary.json
@@ -372,11 +449,25 @@ python bighealth.py list --json-only > qkviews.json
 # Process with detailed logging for automation
 python bighealth.py -v process > processing.log 2>&1
 
-# Debug API issues
+# Debug API issues and file downloads
 python bighealth.py -vvv get diagnostics --id 24821984
+python bighealth.py -vvv process --id 24821984
 ```
 
-## 🐛 Troubleshooting
+### Working with QKView Files
+
+```bash
+# Find all QKView files
+find QKViews/ -name "*.qkview" -type f
+
+# Check QKView file sizes
+find QKViews/ -name "*.qkview" -exec ls -lh {} \;
+
+# Verify file integrity (if using on actual F5 devices)
+# Note: Downloaded QKViews are already processed by iHealth
+```
+
+## 🛠 Troubleshooting
 
 ### Common Issues
 
@@ -402,6 +493,28 @@ cat credentials/cs
 
 # Ensure files have correct permissions
 chmod 600 credentials/cid credentials/cs
+```
+
+**QKView Download Issues**
+```bash
+# Check for 404 errors (QKView not found)
+python bighealth.py -vvv process --id 24821984
+
+# Verify QKView exists in iHealth
+python bighealth.py list
+
+# Check file size validation issues
+python bighealth.py local
+```
+
+**File Size Warnings**
+```bash
+# Check metadata for expected vs actual sizes
+cat QKViews/24821984/metadata.json | grep -A 10 "size_validation"
+
+# Force re-download if file appears corrupted
+rm QKViews/24821984/*.qkview
+python bighealth.py process --id 24821984
 ```
 
 **No QKViews Found**
@@ -456,7 +569,7 @@ python bighealth.py -vvv list
 # Check authentication details
 python bighealth.py -v process --id 24821984
 
-# Verify directory structure
+# Verify directory structure and file sizes
 python bighealth.py local
 
 # Test credentials (automated installation)
@@ -482,6 +595,7 @@ This tool uses the F5 iHealth REST API:
 |----------|--------|---------|
 | `/qkviews` | GET | List all QKViews |
 | `/qkviews/{id}` | GET | Get QKView details |
+| `/qkviews/{id}/files/qkview` | GET | Download QKView file |
 | `/qkviews/{id}/diagnostics?set=hit` | GET | Get diagnostic issues (JSON) |
 | `/qkviews/{id}/diagnostics.pdf?set=hit` | GET | Get diagnostic issues (PDF) |
 | `/qkviews/{id}/diagnostics.csv?set=hit` | GET | Get diagnostic issues (CSV) |
@@ -505,12 +619,13 @@ This tool uses the F5 iHealth REST API:
 
 ### Development Guidelines
 
-- **Follow existing patterns** - Use the same structure as `ihealth_diagnostics.py`
+- **Follow existing patterns** - Use the same structure as existing modules
 - **Inherit from F5iHealthClient** - All modules should extend the base client
 - **Use `save_data_to_qkview()`** - For saving data to the directory structure
 - **Update metadata** - Track processing status in `metadata.json`
 - **Add error handling** - Graceful failure with informative messages
 - **Document thoroughly** - Include docstrings and usage examples
+- **Test file operations** - Verify QKView downloads and size validation
 
 ## 📝 License
 
@@ -524,10 +639,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/bighealth/issues)
+- **Issues**: [GitHub Issues](https://github.com/Jerry-Lees/bighealth/issues)
 - **Documentation**: This README and inline code documentation
 - **F5 iHealth**: [F5 Support Portal](https://support.f5.com)
 
 ---
 
 **Note**: This tool is not officially supported by F5 Networks. It's a community-developed tool for automating F5 iHealth API interactions.
+

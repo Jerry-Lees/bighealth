@@ -14,7 +14,7 @@ def check_environment():
     try:
         import requests
     except ImportError:
-        print("❌ Error: Required dependencies not found!")
+        print("⚠ Error: Required dependencies not found!")
         print()
         print("It looks like you're not in the BigHealth virtual environment.")
         print("This usually happens when running the script directly after installation.")
@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'modules'))
 from ihealth_auth import F5iHealthAuth, load_credentials_from_files, get_credentials_interactive
 from ihealth_utils import F5iHealthClient, print_qkview_summary
 from qkview_directory_utils import list_qkview_directories, initialize_qkview_processing
+from ihealth_qkview_download import F5iHealthQKViewDownload
 
 
 def get_authenticated_client(verbose=False, debug=False):
@@ -105,7 +106,7 @@ def list_qkviews_command(args):
 
 
 def process_qkviews_command(args):
-    """Handle processing QKViews - creates directories and processes data"""
+    """Handle processing QKViews - creates directories, downloads QKView files, and processes data"""
     client, auth = get_authenticated_client(args.verbose, args.debug)
     
     if args.id:
@@ -115,6 +116,25 @@ def process_qkviews_command(args):
         
         if qkview_details:
             print(f"✓ Successfully processed QKView {args.id}")
+            
+            # Download QKView file as part of processing
+            print("Downloading QKView file...")
+            try:
+                downloader = F5iHealthQKViewDownload(auth)
+                download_result = downloader.download_qkview_file(args.id, qkview_details)
+                
+                if download_result['success']:
+                    if download_result.get('skipped'):
+                        print(f"✓ QKView file skipped: {download_result['reason']}")
+                    else:
+                        print("✓ QKView file downloaded successfully")
+                        # Show size validation warning if present
+                        if 'size_validation' in download_result and not download_result['size_validation']['valid']:
+                            print(f"⚠️  WARNING: {download_result['size_validation']['message']}")
+                else:
+                    print(f"⚠ QKView file download failed: {download_result['error']}")
+            except Exception as e:
+                print(f"⚠ QKView file download failed: {e}")
             
             # Auto-process diagnostics as part of processing
             print("Processing diagnostics...")
@@ -170,9 +190,10 @@ def process_qkviews_command(args):
         
         print(f"\nProcessing {len(qkview_ids)} QKView(s)...")
         
-        # Import diagnostics module for batch processing
+        # Import modules for batch processing
         from ihealth_diagnostics import F5iHealthDiagnostics
         diagnostics = F5iHealthDiagnostics(auth)
+        downloader = F5iHealthQKViewDownload(auth)
         
         # Process each QKView
         for i, qkview_id in enumerate(qkview_ids, 1):
@@ -185,6 +206,23 @@ def process_qkviews_command(args):
                 if qkview_details:
                     initialize_qkview_processing(qkview_id, qkview_details)
                     print(f"✓ Successfully processed QKView {qkview_id}")
+                    
+                    # Download QKView file as part of full processing
+                    print("  Downloading QKView file...")
+                    try:
+                        download_result = downloader.download_qkview_file(qkview_id, qkview_details)
+                        if download_result['success']:
+                            if download_result.get('skipped'):
+                                print(f"  ✓ QKView file skipped: {download_result['reason']}")
+                            else:
+                                print(f"  ✓ QKView file downloaded: {download_result['filename']}")
+                                # Show size validation warning if present
+                                if 'size_validation' in download_result and not download_result['size_validation']['valid']:
+                                    print(f"  ⚠️  WARNING: {download_result['size_validation']['message']}")
+                        else:
+                            print(f"  ⚠ QKView file download failed: {download_result['error']}")
+                    except Exception as e:
+                        print(f"  ⚠ QKView file download failed: {e}")
                     
                     # Process diagnostics as part of full processing
                     print("  Processing diagnostics...")
@@ -300,10 +338,26 @@ def list_local_command(args):
                         metadata = json.load(f)
                     print(f"  Created: {metadata.get('created_timestamp', 'Unknown')}")
                     print(f"  Status: {metadata.get('processing_status', {})}")
+                    
+                    # Show QKView file info if available
+                    if 'qkview_file' in metadata:
+                        qkview_file = metadata['qkview_file']
+                        print(f"  QKView File: {qkview_file.get('filename', 'Unknown')}")
+                        if 'file_size' in qkview_file:
+                            print(f"  File Size: {qkview_file['file_size']:,} bytes")
+                        if 'hostname' in qkview_file:
+                            print(f"  Hostname: {qkview_file['hostname']}")
                 except:
                     print("  Status: Metadata file corrupted")
             else:
                 print("  Status: No metadata file")
+            
+            # Check for QKView files
+            if os.path.exists(qkview_path):
+                qkview_files = [f for f in os.listdir(qkview_path) if f.endswith('.qkview')]
+                if qkview_files:
+                    print(f"  QKView Files: {', '.join(qkview_files)}")
+            
             print()
 
 
@@ -314,14 +368,14 @@ def main():
         epilog='''
 Commands:
     list                        List available QKViews from API (read-only)
-    process                     Process QKViews - create directories and download data
+    process                     Process QKViews - create directories, download QKView files and diagnostic data
     get diagnostics             Download diagnostic reports (PDF/CSV) for QKViews
     local                       List local QKView directories
 
 Examples:
     python bighealth.py list                         # Just list QKViews
     python bighealth.py list --json-only             # List with JSON output
-    python bighealth.py process                      # Process all QKViews (includes diagnostics)
+    python bighealth.py process                      # Process all QKViews (includes QKView files + diagnostics)
     python bighealth.py process --id 24821984        # Process specific QKView
     python bighealth.py get diagnostics              # Get diagnostics for all QKViews
     python bighealth.py get diagnostics --id 24821984 # Get diagnostics for specific QKView
@@ -345,7 +399,7 @@ Examples:
                            help='Output only raw JSON response')
     
     # Process command - does the work, creates directories and processes all data
-    process_parser = subparsers.add_parser('process', help='Process QKViews - create directories and download all data')
+    process_parser = subparsers.add_parser('process', help='Process QKViews - create directories, download QKView files and all data')
     process_parser.add_argument('--id', type=str, 
                               help='Process specific QKView ID (otherwise processes all)')
     
