@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-BigHealth - F5 iHealth API Command Line Tool (Enhanced with Metadata-First)
+BigHealth - F5 iHealth API Command Line Tool (Enhanced with Commands Module)
 
 Main script for interacting with F5 iHealth API with metadata-first processing.
 """
@@ -145,11 +145,11 @@ def process_qkviews_command(args):
                     print(f"{GREEN}✓{NC} QKView file downloaded successfully")
                     # Show size validation warning if present
                     if 'size_validation' in download_result and not download_result['size_validation']['valid']:
-                        print(f"{YELLOW}⚠{NC} WARNING: {download_result['size_validation']['message']}")
+                        print(f"{YELLOW}⚠ {NC} WARNING: {download_result['size_validation']['message']}")
             else:
-                print(f"{YELLOW}⚠{NC} QKView file download failed: {download_result['error']}")
+                print(f"{YELLOW}⚠ {NC} QKView file download failed: {download_result['error']}")
         except Exception as e:
-            print(f"{YELLOW}⚠{NC} QKView file download failed: {e}")
+            print(f"{YELLOW}⚠ {NC} QKView file download failed: {e}")
         
         # Step 3: Process diagnostics
         print("Processing diagnostics...")
@@ -161,9 +161,23 @@ def process_qkviews_command(args):
             if any(files.values()):
                 print(f"{GREEN}✓{NC} Diagnostics processed successfully")
             else:
-                print(f"{YELLOW}⚠{NC} Diagnostics processing had issues")
+                print(f"{YELLOW}⚠ {NC} Diagnostics processing had issues")
         except Exception as e:
-            print(f"{YELLOW}⚠{NC} Diagnostics processing failed: {e}")
+            print(f"{YELLOW}⚠ {NC} Diagnostics processing failed: {e}")
+        
+        # Step 4: Process commands
+        print("Processing commands...")
+        try:
+            from ihealth_commands import F5iHealthCommands
+            commands = F5iHealthCommands(auth)
+            cmd_result = commands.download_all_commands(args.id)
+            
+            if cmd_result['success'] and cmd_result['commands_downloaded'] > 0:
+                print(f"{GREEN}✓{NC} Commands processed successfully ({cmd_result['commands_downloaded']} commands)")
+            else:
+                print(f"{YELLOW}⚠ {NC} Commands processing had issues")
+        except Exception as e:
+            print(f"{YELLOW}⚠ {NC} Commands processing failed: {e}")
         
         print(f"\nCompleted processing for {hostname}")
         
@@ -208,7 +222,9 @@ def process_qkviews_command(args):
         
         # Import modules for batch processing
         from ihealth_diagnostics import F5iHealthDiagnostics
+        from ihealth_commands import F5iHealthCommands
         diagnostics = F5iHealthDiagnostics(auth)
+        commands = F5iHealthCommands(auth)
         downloader = F5iHealthQKViewDownload(auth)
         
         # Track processing results
@@ -245,11 +261,11 @@ def process_qkviews_command(args):
                             print(f"  {GREEN}✓{NC} QKView file downloaded: {download_result['filename']}")
                             # Show size validation warning if present
                             if 'size_validation' in download_result and not download_result['size_validation']['valid']:
-                                print(f"  {YELLOW}⚠{NC} WARNING: {download_result['size_validation']['message']}")
+                                print(f"  {YELLOW}⚠ {NC} WARNING: {download_result['size_validation']['message']}")
                     else:
-                        print(f"  {YELLOW}⚠{NC} QKView file download failed: {download_result['error']}")
+                        print(f"  {YELLOW}⚠ {NC} QKView file download failed: {download_result['error']}")
                 except Exception as e:
-                    print(f"  {YELLOW}⚠{NC} QKView file download failed: {e}")
+                    print(f"  {YELLOW}⚠ {NC} QKView file download failed: {e}")
                 
                 # Step 3: Process diagnostics
                 print("  Processing diagnostics...")
@@ -258,9 +274,20 @@ def process_qkviews_command(args):
                     if any(files.values()):
                         print(f"  {GREEN}✓{NC} Diagnostics processed")
                     else:
-                        print(f"  {YELLOW}⚠{NC} Diagnostics had issues")
+                        print(f"  {YELLOW}⚠ {NC} Diagnostics had issues")
                 except Exception as e:
-                    print(f"  {YELLOW}⚠{NC} Diagnostics failed: {e}")
+                    print(f"  {YELLOW}⚠ {NC} Diagnostics failed: {e}")
+                
+                # Step 4: Process commands
+                print("  Processing commands...")
+                try:
+                    cmd_result = commands.download_all_commands(qkview_id)
+                    if cmd_result['success'] and cmd_result['commands_downloaded'] > 0:
+                        print(f"  {GREEN}✓{NC} Commands processed ({cmd_result['commands_downloaded']} commands)")
+                    else:
+                        print(f"  {YELLOW}⚠ {NC} Commands had issues")
+                except Exception as e:
+                    print(f"  {YELLOW}⚠ {NC} Commands failed: {e}")
                     
             except Exception as e:
                 print(f"{RED}✗{NC} Failed to process QKView {qkview_id}: {e}")
@@ -344,6 +371,83 @@ def get_diagnostics_command(args):
             print(f"✓ Token expires at: {auth.token_expires_at}")
 
 
+def get_commands_command(args):
+    """Handle getting commands for QKViews"""
+    client, auth = get_authenticated_client(args.verbose, args.debug)
+    
+    # Import commands module
+    from ihealth_commands import F5iHealthCommands
+    commands = F5iHealthCommands(auth)
+    
+    if args.id:
+        # Get commands for specific QKView ID
+        print(f"Getting commands for QKView {args.id}...")
+        
+        # Download all commands
+        result = commands.download_all_commands(args.id)
+        
+        if result['success'] and result['commands_downloaded'] > 0:
+            print(f"✓ Successfully downloaded {result['commands_downloaded']} commands for QKView {args.id}")
+            if args.verbose or args.debug:
+                print(f"Commands directory: {result['commands_directory']}")
+                print("Command breakdown:")
+                for cmd in result['commands']:
+                    if 'error' not in cmd:
+                        print(f"  {cmd['name']} -> {cmd['type']}")
+        else:
+            error_msg = result.get('error', 'Unknown error')
+            print(f"✗ Failed to download commands for QKView {args.id}: {error_msg}")
+            sys.exit(1)
+    else:
+        # Get commands for all QKViews
+        print("Retrieving QKView list...")
+        qkview_data = client.list_qkviews()
+        
+        if qkview_data is None:
+            print("✗ Failed to retrieve QKViews")
+            sys.exit(1)
+        
+        # Extract QKView IDs from the response
+        qkview_ids = []
+        if isinstance(qkview_data, dict) and 'id' in qkview_data:
+            qkview_ids = qkview_data['id']
+        elif isinstance(qkview_data, list):
+            qkview_ids = qkview_data
+        
+        if not qkview_ids:
+            print("No QKViews found to process")
+            return
+        
+        print(f"\nGetting commands for {len(qkview_ids)} QKView(s)...")
+        
+        # Process each QKView
+        success_count = 0
+        total_commands = 0
+        
+        for i, qkview_id in enumerate(qkview_ids, 1):
+            try:
+                print(f"\n[{i}/{len(qkview_ids)}] Getting commands for QKView {qkview_id}...")
+                
+                result = commands.download_all_commands(qkview_id)
+                
+                if result['success'] and result['commands_downloaded'] > 0:
+                    print(f"✓ Successfully downloaded {result['commands_downloaded']} commands")
+                    success_count += 1
+                    total_commands += result['commands_downloaded']
+                else:
+                    error_msg = result.get('error', 'No commands downloaded')
+                    print(f"▲ {error_msg}")
+                    
+            except Exception as e:
+                print(f"✗ Failed to get commands for QKView {qkview_id}: {e}")
+        
+        print(f"\nCompleted commands download: {success_count}/{len(qkview_ids)} QKViews successful")
+        print(f"Total commands downloaded: {total_commands}")
+        
+        if args.verbose or args.debug:
+            print(f"✓ Token expires at: {auth.token_expires_at}")
+
+
 def list_local_command(args):
     """List locally created QKView directories (supports both hostname and ID-based)"""
     qkview_dirs = list_qkview_directories()
@@ -396,6 +500,12 @@ def list_local_command(args):
                         if 'file_size' in qkview_file:
                             size_mb = qkview_file['file_size'] / (1024 * 1024)
                             print(f"   File Size: {qkview_file['file_size']:,} bytes ({size_mb:.1f} MB)")
+                    
+                    # Show commands info if available
+                    if 'commands_info' in metadata:
+                        commands_info = metadata['commands_info']
+                        print(f"   Commands: {commands_info.get('successfully_downloaded', 0)}/{commands_info.get('total_available', 0)} downloaded")
+                        
                 except:
                     print("   Status: ▲ Metadata file corrupted")
             else:
@@ -410,28 +520,32 @@ def list_local_command(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='BigHealth - F5 iHealth API Tool (Enhanced with Metadata-First)',
+        description='BigHealth - F5 iHealth API Tool (Enhanced with Commands Module)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Commands:
     list                        List available QKViews from API (read-only)
-    process                     Process QKViews with metadata-first approach
+    process                     Process QKViews with metadata-first approach (includes commands)
     get diagnostics             Download diagnostic reports (PDF/CSV) for QKViews
+    get commands                Download command outputs (NEW!) for QKViews
     local                       List local QKView directories
 
 Enhanced Features:
     • Metadata-first processing for better reliability
     • Hostname-based directory structure
     • Smart QKView file downloading with size validation
+    • Complete command outputs organized by type (tmsh/UNIX/Utilities)
     • Improved error handling and progress reporting
 
 Examples:
     python bighealth.py list                         # List QKViews
     python bighealth.py list --json-only             # List with JSON output
-    python bighealth.py process                      # Process all QKViews (metadata-first)
+    python bighealth.py process                      # Process all QKViews (includes commands)
     python bighealth.py process --id 24821984        # Process specific QKView
     python bighealth.py get diagnostics              # Get diagnostics for all QKViews
     python bighealth.py get diagnostics --id 24821984 # Get diagnostics for specific QKView
+    python bighealth.py get commands                 # Get commands for all QKViews (NEW!)
+    python bighealth.py get commands --id 24821984   # Get commands for specific QKView (NEW!)
     python bighealth.py local                        # Show local directories
         '''
     )
@@ -441,7 +555,7 @@ Examples:
                        help='Enable verbose output')
     parser.add_argument('-vvv', '--debug', action='store_true',
                        help='Enable debug output (very verbose)')
-    parser.add_argument('--version', action='version', version='BigHealth 0.2.0-metadata-first')
+    parser.add_argument('--version', action='version', version='BigHealth 0.2.1-commands-support')
     
     # Subcommands
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
@@ -451,8 +565,8 @@ Examples:
     list_parser.add_argument('--json-only', action='store_true',
                            help='Output only raw JSON response')
     
-    # Process command - metadata-first approach
-    process_parser = subparsers.add_parser('process', help='Process QKViews with metadata-first approach')
+    # Process command - metadata-first approach (now includes commands)
+    process_parser = subparsers.add_parser('process', help='Process QKViews with metadata-first approach (includes commands)')
     process_parser.add_argument('--id', type=str, 
                               help='Process specific QKView ID (otherwise processes all)')
     
@@ -464,6 +578,11 @@ Examples:
     diagnostics_parser = get_subparsers.add_parser('diagnostics', help='Download diagnostic reports')
     diagnostics_parser.add_argument('--id', type=str,
                                    help='Get diagnostics for specific QKView ID (otherwise gets all)')
+    
+    # Get commands subcommand (NEW!)
+    commands_parser = get_subparsers.add_parser('commands', help='Download command outputs')
+    commands_parser.add_argument('--id', type=str,
+                                help='Get commands for specific QKView ID (otherwise gets all)')
     
     # Local command - shows local directories
     local_parser = subparsers.add_parser('local', help='List local QKView directories')
@@ -483,9 +602,12 @@ Examples:
     elif args.command == 'get':
         if hasattr(args, 'get_type') and args.get_type == 'diagnostics':
             get_diagnostics_command(args)
+        elif hasattr(args, 'get_type') and args.get_type == 'commands':
+            get_commands_command(args)
         else:
-            print("Available get commands: diagnostics")
+            print("Available get commands: diagnostics, commands")
             print("Usage: python bighealth.py get diagnostics [--id QKVIEW_ID]")
+            print("Usage: python bighealth.py get commands [--id QKVIEW_ID]")
     elif args.command == 'local':
         list_local_command(args)
     else:
